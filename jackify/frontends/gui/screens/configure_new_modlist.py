@@ -1184,7 +1184,7 @@ class ConfigureNewModlistScreen(QWidget):
                             nexus_api_key='',  # Not needed for configuration
                             modlist_value='',  # Not needed for existing modlist
                             modlist_source='existing',
-                            resolution=self.context.get('resolution'),
+                            resolution=self.context.get('resolution') or get_resolution_fallback(None),
                             skip_confirmation=True
                         )
                         

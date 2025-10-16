@@ -257,10 +257,18 @@ class WinetricksHandler:
         components_to_install = self._reorder_components_for_installation(all_components)
         self.logger.info(f"WINEPREFIX: {wineprefix}, Game: {game_var}, Ordered Components: {components_to_install}")
 
-        # Hybrid approach: Use protontricks for dotnet40 only, winetricks for everything else
-        if "dotnet40" in components_to_install:
-            self.logger.info("dotnet40 detected - using hybrid approach: protontricks for dotnet40, winetricks for others")
+        # Check user preference for component installation method
+        from ..handlers.config_handler import ConfigHandler
+        config_handler = ConfigHandler()
+        use_winetricks = config_handler.get('use_winetricks_for_components', True)
+
+        # Choose installation method based on user preference and components
+        if use_winetricks and "dotnet40" in components_to_install:
+            self.logger.info("Using optimized approach: protontricks for dotnet40 (reliable), winetricks for other components (fast)")
             return self._install_components_hybrid_approach(components_to_install, wineprefix, game_var)
+        elif not use_winetricks:
+            self.logger.info("Using legacy approach: protontricks for all components")
+            return self._install_components_protontricks_only(components_to_install, wineprefix, game_var)
 
         # For non-dotnet40 installations, install all components together (faster)
         max_attempts = 3
@@ -289,6 +297,8 @@ class WinetricksHandler:
                 self.logger.debug(f"Winetricks output: {result.stdout}")
                 if result.returncode == 0:
                     self.logger.info("Wine Component installation command completed successfully.")
+                    # Set Windows 10 mode after component installation (matches legacy script timing)
+                    self._set_windows_10_mode(wineprefix, env.get('WINE', ''))
                     return True
                 else:
                     # Special handling for dotnet40 verification issue (mimics protontricks behavior)
@@ -415,14 +425,8 @@ class WinetricksHandler:
                     self.logger.error("Failed to prepare prefix for dotnet40")
                     return False
             else:
-                # For non-dotnet40 components, ensure we're in Windows 10 mode
+                # For non-dotnet40 components, install in standard mode (Windows 10 will be set after all components)
                 self.logger.debug(f"Installing {component} in standard mode")
-                try:
-                    subprocess.run([
-                        self.winetricks_path, '-q', 'win10'
-                    ], env=env, capture_output=True, text=True, timeout=300)
-                except Exception as e:
-                    self.logger.warning(f"Could not set win10 mode for {component}: {e}")
 
             # Install this component
             max_attempts = 3
@@ -480,6 +484,8 @@ class WinetricksHandler:
                 return False
 
         self.logger.info("✓ All components installed successfully using separate sessions")
+        # Set Windows 10 mode after all component installation (matches legacy script timing)
+        self._set_windows_10_mode(wineprefix, env.get('WINE', ''))
         return True
 
     def _install_components_hybrid_approach(self, components: list, wineprefix: str, game_var: str) -> bool:
@@ -524,6 +530,9 @@ class WinetricksHandler:
             return self._install_components_with_winetricks(other_components, wineprefix, env)
 
         self.logger.info("✓ Hybrid component installation completed successfully")
+        # Set Windows 10 mode after all component installation (matches legacy script timing)
+        wine_binary = self._get_wine_binary_for_prefix(wineprefix)
+        self._set_windows_10_mode(wineprefix, wine_binary)
         return True
 
     def _install_dotnet40_with_protontricks(self, wineprefix: str, game_var: str) -> bool:
@@ -562,7 +571,7 @@ class WinetricksHandler:
             # Determine if we're on Steam Deck (for protontricks handler)
             steamdeck = os.path.exists('/home/deck')
 
-            protontricks_handler = ProtontricksHandler(steamdeck=steamdeck, logger=self.logger)
+            protontricks_handler = ProtontricksHandler(steamdeck, logger=self.logger)
 
             # Detect protontricks availability
             if not protontricks_handler.detect_protontricks():
@@ -691,6 +700,9 @@ class WinetricksHandler:
 
                 if result.returncode == 0:
                     self.logger.info(f"✓ Winetricks components installed successfully: {components}")
+                    # Set Windows 10 mode after component installation (matches legacy script timing)
+                    wine_binary = env.get('WINE', '')
+                    self._set_windows_10_mode(env.get('WINEPREFIX', ''), wine_binary)
                     return True
                 else:
                     self.logger.error(f"✗ Winetricks failed (attempt {attempt}): {result.stderr.strip()}")
@@ -700,6 +712,140 @@ class WinetricksHandler:
 
         self.logger.error(f"Failed to install components with winetricks after {max_attempts} attempts")
         return False
+
+    def _set_windows_10_mode(self, wineprefix: str, wine_binary: str):
+        """
+        Set Windows 10 mode for the prefix after component installation (matches legacy script timing).
+        This should be called AFTER all Wine components are installed, not before.
+        """
+        try:
+            env = os.environ.copy()
+            env['WINEPREFIX'] = wineprefix
+            env['WINE'] = wine_binary
+
+            self.logger.info("Setting Windows 10 mode after component installation (matching legacy script)")
+            result = subprocess.run([
+                self.winetricks_path, '-q', 'win10'
+            ], env=env, capture_output=True, text=True, timeout=300)
+
+            if result.returncode == 0:
+                self.logger.info("✓ Windows 10 mode set successfully")
+            else:
+                self.logger.warning(f"Could not set Windows 10 mode: {result.stderr}")
+
+        except Exception as e:
+            self.logger.warning(f"Error setting Windows 10 mode: {e}")
+
+    def _install_components_protontricks_only(self, components: list, wineprefix: str, game_var: str) -> bool:
+        """
+        Legacy approach: Install all components using protontricks only.
+        This matches the behavior of the original bash script.
+        """
+        try:
+            self.logger.info(f"Installing all components with protontricks (legacy method): {components}")
+
+            # Import protontricks handler
+            from ..handlers.protontricks_handler import ProtontricksHandler
+
+            # Determine if we're on Steam Deck (for protontricks handler)
+            steamdeck = os.path.exists('/home/deck')
+            protontricks_handler = ProtontricksHandler(steamdeck, logger=self.logger)
+
+            # Get AppID from wineprefix
+            appid = self._extract_appid_from_wineprefix(wineprefix)
+            if not appid:
+                self.logger.error("Could not extract AppID from wineprefix for protontricks installation")
+                return False
+
+            self.logger.info(f"Using AppID {appid} for protontricks installation")
+
+            # Detect protontricks availability
+            if not protontricks_handler.detect_protontricks():
+                self.logger.error("Protontricks not available for component installation")
+                return False
+
+            # Install all components using protontricks
+            success = protontricks_handler.install_wine_components(appid, game_var, components)
+
+            if success:
+                self.logger.info("✓ All components installed successfully with protontricks")
+                # Set Windows 10 mode after component installation
+                wine_binary = self._get_wine_binary_for_prefix(wineprefix)
+                self._set_windows_10_mode(wineprefix, wine_binary)
+                return True
+            else:
+                self.logger.error("✗ Component installation failed with protontricks")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Error installing components with protontricks: {e}", exc_info=True)
+            return False
+
+    def _extract_appid_from_wineprefix(self, wineprefix: str) -> Optional[str]:
+        """
+        Extract AppID from wineprefix path.
+
+        Args:
+            wineprefix: Wine prefix path
+
+        Returns:
+            AppID as string, or None if extraction fails
+        """
+        try:
+            if 'compatdata' in wineprefix:
+                # Standard Steam compatdata structure
+                path_parts = Path(wineprefix).parts
+                for i, part in enumerate(path_parts):
+                    if part == 'compatdata' and i + 1 < len(path_parts):
+                        potential_appid = path_parts[i + 1]
+                        if potential_appid.isdigit():
+                            return potential_appid
+            self.logger.error(f"Could not extract AppID from wineprefix path: {wineprefix}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error extracting AppID from wineprefix: {e}")
+            return None
+
+    def _get_wine_binary_for_prefix(self, wineprefix: str) -> str:
+        """
+        Get the wine binary path for a given prefix.
+
+        Args:
+            wineprefix: Wine prefix path
+
+        Returns:
+            Wine binary path as string
+        """
+        try:
+            from ..handlers.config_handler import ConfigHandler
+            from ..handlers.wine_utils import WineUtils
+
+            config = ConfigHandler()
+            user_proton_path = config.get_proton_path()
+
+            # If user selected a specific Proton, try that first
+            wine_binary = None
+            if user_proton_path != 'auto':
+                if os.path.exists(user_proton_path):
+                    resolved_proton_path = os.path.realpath(user_proton_path)
+                    valve_proton_wine = os.path.join(resolved_proton_path, 'dist', 'bin', 'wine')
+                    ge_proton_wine = os.path.join(resolved_proton_path, 'files', 'bin', 'wine')
+
+                    if os.path.exists(valve_proton_wine):
+                        wine_binary = valve_proton_wine
+                    elif os.path.exists(ge_proton_wine):
+                        wine_binary = ge_proton_wine
+
+            # Fall back to auto-detection if user selection failed or is 'auto'
+            if not wine_binary:
+                best_proton = WineUtils.select_best_proton()
+                if best_proton:
+                    wine_binary = WineUtils.find_proton_binary(best_proton['name'])
+
+            return wine_binary if wine_binary else ""
+        except Exception as e:
+            self.logger.error(f"Error getting wine binary for prefix: {e}")
+            return ""
 
     def _cleanup_wine_processes(self):
         """

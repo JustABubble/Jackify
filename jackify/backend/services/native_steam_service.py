@@ -345,16 +345,22 @@ class NativeSteamService:
     def set_proton_version(self, app_id: int, proton_version: str = "proton_experimental") -> bool:
         """
         Set the Proton version for a specific app using ONLY config.vdf like steam-conductor does.
-        
+
         Args:
-            app_id: The unsigned AppID  
+            app_id: The unsigned AppID
             proton_version: The Proton version to set
-            
+
         Returns:
             True if successful
         """
+        # Ensure Steam user detection is completed first
+        if not self.steam_path:
+            if not self.find_steam_user():
+                logger.error("Cannot set Proton version: Steam user detection failed")
+                return False
+
         logger.info(f"Setting Proton version '{proton_version}' for AppID {app_id} using STL-compatible format")
-        
+
         try:
             # Step 1: Write to the main config.vdf for CompatToolMapping
             config_path = self.steam_path / "config" / "config.vdf"

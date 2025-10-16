@@ -499,6 +499,7 @@ class ConfigureExistingModlistScreen(QWidget):
                         # For existing modlists, add resolution if specified
                         if self.resolution != "Leave unchanged":
                             modlist_context.resolution = self.resolution.split()[0]
+                        # Note: If "Leave unchanged" is selected, resolution stays None (no fallback needed)
                         
                         # Define callbacks
                         def progress_callback(message):

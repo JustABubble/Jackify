@@ -1746,7 +1746,14 @@ class InstallModlistScreen(QWidget):
             
             # Save resolution for later use in configuration
             resolution = self.resolution_combo.currentText()
-            self._current_resolution = resolution.split()[0] if resolution != "Leave unchanged" else None
+            # Extract resolution properly (e.g., "1280x800" from "1280x800 (Steam Deck)")
+            if resolution != "Leave unchanged":
+                if " (" in resolution:
+                    self._current_resolution = resolution.split(" (")[0]
+                else:
+                    self._current_resolution = resolution
+            else:
+                self._current_resolution = None
             
             # Use automated prefix creation instead of manual steps
             debug_print("DEBUG: Starting automated prefix creation workflow")
@@ -1760,7 +1767,14 @@ class InstallModlistScreen(QWidget):
         # Ensure _current_resolution is always set before starting workflow
         if not hasattr(self, '_current_resolution') or self._current_resolution is None:
             resolution = self.resolution_combo.currentText() if hasattr(self, 'resolution_combo') else None
-            self._current_resolution = resolution.split()[0] if resolution and resolution != "Leave unchanged" else None
+            # Extract resolution properly (e.g., "1280x800" from "1280x800 (Steam Deck)")
+            if resolution and resolution != "Leave unchanged":
+                if " (" in resolution:
+                    self._current_resolution = resolution.split(" (")[0]
+                else:
+                    self._current_resolution = resolution
+            else:
+                self._current_resolution = None
         """Start the automated prefix creation workflow"""
         try:
             # Disable controls during installation

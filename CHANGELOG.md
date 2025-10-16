@@ -1,5 +1,31 @@
 # Jackify Changelog
 
+## v0.1.6 - Advanced Proton Management & Lorerim Support
+**Release Date:** October 16, 2025
+
+### Major New Features
+- **Dual Proton Configuration**: Separate Install Proton and Game Proton version selection in Settings
+  - **Install Proton**: Optimized for modlist installation and texture processing (Experimental/GE-Proton 10+ recommended for performance)
+  - **Game Proton**: For game shortcuts (supports any Proton 9+ version)
+  - Independent configuration allows users to optimize for both installation speed and game compatibility
+
+- **Lorerim Proton Override**: Automatic Proton 9 selection for Lorerim modlist installations
+  - Priority system: GE-Proton9-27 → Other GE-Proton 9 versions → Valve Proton 9 → user settings fallback
+  - User notification when override is applied
+  - Case-insensitive detection for Lorerim modlists
+
+- **Configurable Component Installation Method**: User-selectable toggle in Settings
+  - **Optimized Mode** (default): Protontricks for dotnet40 (reliable), winetricks for other components (fast)
+  - **Legacy Mode**: Protontricks for all components (slower but maximum compatibility)
+
+### Engine & Technical Improvements
+- **jackify-engine v0.3.17**: Latest engine version with performance improvements
+- **Windows 10 Prefix Timing**: Improved timing to match legacy script behavior
+- **Self-Updater Enhancement**: Fixed auto-restart checkbox functionality
+- **ProtontricksHandler**: Updated constructor calls across codebase for consistency
+
+---
+
 ## v0.1.5.3 - Critical Bug Fixes
 **Release Date:** October 2, 2025
 
@@ -67,7 +93,8 @@
 - **ModOrganizer.ini Path Format**: Fixed missing backslash in gamePath format for proper Windows path structure
 - **SD Card Binary Paths**: Corrected binary paths to use D: drive mapping instead of raw Linux paths for SD card installs
 - **Proton Fallback Logic**: Enhanced fallback when user-selected Proton version is missing or invalid
-- **Settings Persistence**: Improved configuration saving with verification and logging
+
+#Y- **Settings Persistence**: Improved configuration saving with verification and logging
 - **System Wine Elimination**: Comprehensive audit ensures Jackify never uses system wine installations
 - **Winetricks Reliability**: Fixed vcrun2022 installation failures and wine app crashes
 - **Enderal Registry Injection**: Switched from launch options to registry injection approach

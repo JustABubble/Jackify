@@ -41,7 +41,7 @@ class ShortcutHandler:
         self._last_shortcuts_backup = None # Track the last backup path
         self._safe_shortcuts_backup = None # Track backup made just before restart
         # Initialize ProtontricksHandler here, passing steamdeck status
-        self.protontricks_handler = ProtontricksHandler(steamdeck=self.steamdeck)
+        self.protontricks_handler = ProtontricksHandler(self.steamdeck)
         
     def _enable_tab_completion(self):
         """Enable tab completion for file paths using the shared completer"""
@@ -964,7 +964,7 @@ class ShortcutHandler:
         self.logger.info(f"Attempting to find current AppID for shortcut: '{shortcut_name}' (exe_path: '{exe_path}')")
         try:
             from .protontricks_handler import ProtontricksHandler # Local import
-            pt_handler = ProtontricksHandler(steamdeck=self.steamdeck)
+            pt_handler = ProtontricksHandler(self.steamdeck)
             if not pt_handler.detect_protontricks():
                 self.logger.error("Protontricks not detected")
                 return None

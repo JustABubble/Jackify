@@ -631,6 +631,10 @@ class ModlistService:
                 'skip_confirmation': True,  # Service layer should be non-interactive
                 'manual_steps_completed': False
             }
+
+            # DEBUG: Log what resolution we're passing
+            logger.info(f"DEBUG: config_context resolution = {config_context['resolution']}")
+            logger.info(f"DEBUG: context.resolution = {getattr(context, 'resolution', 'NOT_SET')}")
             
             # Run the complete configuration phase
             success = modlist_menu.run_modlist_configuration_phase(config_context)

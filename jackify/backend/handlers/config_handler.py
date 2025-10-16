@@ -38,7 +38,9 @@ class ConfigHandler:
             "default_download_parent_dir": None,  # Parent directory for downloads
             "modlist_install_base_dir": os.path.expanduser("~/Games"),  # Configurable base directory for modlist installations
             "modlist_downloads_base_dir": os.path.expanduser("~/Games/Modlist_Downloads"),  # Configurable base directory for downloads
-            "jackify_data_dir": None  # Configurable Jackify data directory (default: ~/Jackify)
+            "jackify_data_dir": None,  # Configurable Jackify data directory (default: ~/Jackify)
+            "use_winetricks_for_components": True,  # True = use winetricks (faster), False = use protontricks for all (legacy)
+            "game_proton_path": None  # Proton version for game shortcuts (can be any Proton 9+), separate from install proton
         }
         
         # Load configuration if exists
@@ -498,20 +500,44 @@ class ConfigHandler:
 
     def get_proton_path(self):
         """
-        Retrieve the saved Proton path from configuration
+        Retrieve the saved Install Proton path from configuration (for jackify-engine)
         Always reads fresh from disk to pick up changes from Settings dialog
 
         Returns:
-            str: Saved Proton path or 'auto' if not saved
+            str: Saved Install Proton path or 'auto' if not saved
         """
         try:
             # Reload config from disk to pick up changes from Settings dialog
             self._load_config()
             proton_path = self.settings.get("proton_path", "auto")
-            logger.debug(f"Retrieved fresh proton_path from config: {proton_path}")
+            logger.debug(f"Retrieved fresh install proton_path from config: {proton_path}")
             return proton_path
         except Exception as e:
-            logger.error(f"Error retrieving proton_path: {e}")
+            logger.error(f"Error retrieving install proton_path: {e}")
+            return "auto"
+
+    def get_game_proton_path(self):
+        """
+        Retrieve the saved Game Proton path from configuration (for game shortcuts)
+        Falls back to install Proton path if game Proton not set
+        Always reads fresh from disk to pick up changes from Settings dialog
+
+        Returns:
+            str: Saved Game Proton path, Install Proton path, or 'auto' if not saved
+        """
+        try:
+            # Reload config from disk to pick up changes from Settings dialog
+            self._load_config()
+            game_proton_path = self.settings.get("game_proton_path")
+
+            # If game proton not set or set to same_as_install, use install proton
+            if not game_proton_path or game_proton_path == "same_as_install":
+                game_proton_path = self.settings.get("proton_path", "auto")
+
+            logger.debug(f"Retrieved fresh game proton_path from config: {game_proton_path}")
+            return game_proton_path
+        except Exception as e:
+            logger.error(f"Error retrieving game proton_path: {e}")
             return "auto"
 
     def get_proton_version(self):

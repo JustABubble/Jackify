@@ -39,14 +39,26 @@ class AutomatedPrefixService:
         from jackify.shared.timing import get_timestamp
         return get_timestamp()
 
-    def _get_user_proton_version(self):
-        """Get user's preferred Proton version from config, with fallback to auto-detection"""
+    def _get_user_proton_version(self, modlist_name: str = None):
+        """Get user's preferred Proton version from config, with fallback to auto-detection
+
+        Args:
+            modlist_name: Optional modlist name for special handling (e.g., Lorerim)
+        """
         try:
             from jackify.backend.handlers.config_handler import ConfigHandler
             from jackify.backend.handlers.wine_utils import WineUtils
 
+            # Check for Lorerim-specific Proton override first
+            if modlist_name and modlist_name.lower() == 'lorerim':
+                lorerim_proton = self._get_lorerim_preferred_proton()
+                if lorerim_proton:
+                    logger.info(f"Lorerim detected: Using {lorerim_proton} instead of user settings")
+                    self._store_proton_override_notification("Lorerim", lorerim_proton)
+                    return lorerim_proton
+
             config_handler = ConfigHandler()
-            user_proton_path = config_handler.get_proton_path()
+            user_proton_path = config_handler.get_game_proton_path()
 
             if user_proton_path == 'auto':
                 # Use enhanced fallback logic with GE-Proton preference
@@ -125,8 +137,8 @@ class AutomatedPrefixService:
                     logger.warning(f"Could not generate STEAM_COMPAT_MOUNTS, using default: {e}")
                     launch_options = "%command%"
             
-            # Get user's preferred Proton version
-            proton_version = self._get_user_proton_version()
+            # Get user's preferred Proton version (with Lorerim-specific override)
+            proton_version = self._get_user_proton_version(shortcut_name)
 
             # Create shortcut with Proton using native service
             success, app_id = steam_service.create_shortcut_with_proton(
@@ -487,7 +499,7 @@ exit"""
                 try:
                     # Use the existing protontricks handler
                     from jackify.backend.handlers.protontricks_handler import ProtontricksHandler
-                    protontricks_handler = ProtontricksHandler(steamdeck=steamdeck or False)
+                    protontricks_handler = ProtontricksHandler(steamdeck or False)
                     result = protontricks_handler.run_protontricks('-l')
                     
                     if result.returncode == 0:
@@ -1556,6 +1568,9 @@ echo Prefix creation complete.
             
             if progress_callback:
                 progress_callback(f"{self._get_progress_timestamp()} Steam Configuration complete!")
+            # Show Proton override notification if applicable
+            self._show_proton_override_notification(progress_callback)
+
             logger.info(" Simple automated prefix creation workflow completed successfully")
             return True, prefix_path, actual_appid
             
@@ -1869,6 +1884,11 @@ echo Prefix creation complete.
             if progress_callback:
                 progress_callback(f"{last_timestamp} Steam integration complete")
                 progress_callback("")  # Blank line after Steam integration complete
+
+            # Show Proton override notification if applicable
+            self._show_proton_override_notification(progress_callback)
+
+            if progress_callback:
                 progress_callback("")  # Extra blank line to span across Configuration Summary
                 progress_callback("")  # And one more to create space before Prefix Configuration
             
@@ -2705,7 +2725,7 @@ echo Prefix creation complete.
             from jackify.backend.handlers.wine_utils import WineUtils
 
             config = ConfigHandler()
-            user_proton_path = config.get_proton_path()
+            user_proton_path = config.get_game_proton_path()
 
             # If user selected a specific Proton, try that first
             if user_proton_path != 'auto':
@@ -3005,4 +3025,92 @@ echo Prefix creation complete.
                 logger.debug(f"{config['name']} not found in Steam libraries")
                 
         logger.info("Game registry injection completed")
-    
+
+    def _get_lorerim_preferred_proton(self):
+        """Get Lorerim's preferred Proton 9 version with specific priority order"""
+        try:
+            from jackify.backend.handlers.wine_utils import WineUtils
+
+            # Get all available Proton versions
+            available_versions = WineUtils.scan_all_proton_versions()
+
+            if not available_versions:
+                logger.warning("No Proton versions found for Lorerim override")
+                return None
+
+            # Priority order for Lorerim:
+            # 1. GEProton9-27 (specific version)
+            # 2. Other GEProton-9 versions (latest first)
+            # 3. Valve Proton 9 (any version)
+
+            preferred_candidates = []
+
+            for version in available_versions:
+                version_name = version['name']
+
+                # Priority 1: GEProton9-27 specifically
+                if version_name == 'GE-Proton9-27':
+                    logger.info(f"Lorerim: Found preferred GE-Proton9-27")
+                    return version_name
+
+                # Priority 2: Other GE-Proton 9 versions
+                elif version_name.startswith('GE-Proton9-'):
+                    preferred_candidates.append(('ge_proton_9', version_name, version))
+
+                # Priority 3: Valve Proton 9
+                elif 'Proton 9' in version_name:
+                    preferred_candidates.append(('valve_proton_9', version_name, version))
+
+            # Return best candidate if any found
+            if preferred_candidates:
+                # Sort by priority (GE-Proton first, then by name for latest)
+                preferred_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+                best_candidate = preferred_candidates[0]
+                logger.info(f"Lorerim: Selected {best_candidate[1]} as best Proton 9 option")
+                return best_candidate[1]
+
+            logger.warning("Lorerim: No suitable Proton 9 versions found, will use user settings")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error detecting Lorerim Proton preference: {e}")
+            return None
+
+    def _store_proton_override_notification(self, modlist_name: str, proton_version: str):
+        """Store Proton override information for end-of-install notification"""
+        try:
+            # Store override info for later display
+            if not hasattr(self, '_proton_overrides'):
+                self._proton_overrides = []
+
+            self._proton_overrides.append({
+                'modlist': modlist_name,
+                'proton_version': proton_version,
+                'reason': f'{modlist_name} requires Proton 9 for optimal compatibility'
+            })
+
+            logger.debug(f"Stored Proton override notification: {modlist_name} → {proton_version}")
+
+        except Exception as e:
+            logger.error(f"Failed to store Proton override notification: {e}")
+
+    def _show_proton_override_notification(self, progress_callback=None):
+        """Display any Proton override notifications to the user"""
+        try:
+            if hasattr(self, '_proton_overrides') and self._proton_overrides:
+                for override in self._proton_overrides:
+                    notification_msg = f"PROTON OVERRIDE: {override['modlist']} configured to use {override['proton_version']} for optimal compatibility"
+
+                    if progress_callback:
+                        progress_callback("")
+                        progress_callback(f"{self._get_progress_timestamp()} {notification_msg}")
+
+                    logger.info(notification_msg)
+
+                # Clear notifications after display
+                self._proton_overrides = []
+
+        except Exception as e:
+            logger.error(f"Failed to show Proton override notification: {e}")
+
+

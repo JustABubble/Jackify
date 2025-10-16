@@ -68,7 +68,7 @@ class ModlistInstallCLI:
     def __init__(self, menu_handler: MenuHandler, steamdeck: bool = False):
         self.menu_handler = menu_handler
         self.steamdeck = steamdeck
-        self.protontricks_handler = ProtontricksHandler(steamdeck=steamdeck)
+        self.protontricks_handler = ProtontricksHandler(steamdeck)
         self.shortcut_handler = ShortcutHandler(steamdeck=steamdeck)
         self.context = {}
         # Use standard logging (no file handler)

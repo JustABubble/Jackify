@@ -256,18 +256,24 @@ class UpdateDialog(QDialog):
             self.downloaded_path = downloaded_path
             self.progress_label.setText("Download completed successfully!")
             self.progress_bar.setValue(100)
-            
-            # Show install button
-            self.download_button.setVisible(False)
-            self.install_button.setVisible(True)
-            
-            # Re-enable other buttons
-            self.later_button.setEnabled(True)
-            self.skip_button.setEnabled(True)
-            
+
+            # Check if auto-restart is enabled
+            if self.auto_restart_checkbox.isChecked():
+                # Auto-install immediately
+                self.progress_label.setText("Auto-installing update...")
+                self.install_update()
+            else:
+                # Show install button for manual installation
+                self.download_button.setVisible(False)
+                self.install_button.setVisible(True)
+
+                # Re-enable other buttons
+                self.later_button.setEnabled(True)
+                self.skip_button.setEnabled(True)
+
         else:
             self.show_error("Download Failed", "Failed to download the update. Please try again later.")
-            
+
             # Reset UI
             self.progress_group.setVisible(False)
             self.download_button.setEnabled(True)

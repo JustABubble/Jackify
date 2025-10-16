@@ -79,6 +79,7 @@ class ModlistHandler:
         "livingskyrim": ["dotnet40"],
         "lsiv": ["dotnet40"],
         "ls4": ["dotnet40"],
+        "lorerim": ["dotnet40"],
         "lostlegacy": ["dotnet48"],
     }
     
@@ -158,7 +159,7 @@ class ModlistHandler:
         self.stock_game_path = None
         
         # Initialize Handlers (should happen regardless of how paths were provided)
-        self.protontricks_handler = ProtontricksHandler(steamdeck=self.steamdeck, logger=self.logger)
+        self.protontricks_handler = ProtontricksHandler(self.steamdeck, logger=self.logger)
         # Initialize winetricks handler for wine component installation
         from .winetricks_handler import WinetricksHandler
         self.winetricks_handler = WinetricksHandler(logger=self.logger)
@@ -347,7 +348,8 @@ class ModlistHandler:
         # Store engine_installed flag for conditional path manipulation
         self.engine_installed = modlist_info.get('engine_installed', False)
         self.logger.debug(f"  Engine Installed: {self.engine_installed}")
-        
+
+
         # Call internal detection methods to populate more state
         if not self._detect_game_variables():
             self.logger.warning("Failed to auto-detect game type after setting context.")
@@ -687,39 +689,27 @@ class ModlistHandler:
         # All modlists now use their own AppID for wine components
         target_appid = self.appid
         
-        # Use winetricks for wine component installation (faster than protontricks)
+        # Use user's preferred component installation method (respects settings toggle)
         wineprefix = self.protontricks_handler.get_wine_prefix_path(target_appid)
         if not wineprefix:
-            self.logger.error("Failed to get WINEPREFIX path for winetricks.")
+            self.logger.error("Failed to get WINEPREFIX path for component installation.")
             print("Error: Could not determine wine prefix location.")
             return False
 
-        # Try winetricks first (preferred method with current fix)
-        winetricks_success = False
+        # Use the winetricks handler which respects the user's toggle setting
         try:
-            self.logger.info("Attempting Wine component installation using winetricks...")
-            winetricks_success = self.winetricks_handler.install_wine_components(wineprefix, self.game_var_full, specific_components=components)
-            if winetricks_success:
-                self.logger.info("Winetricks installation completed successfully")
-        except Exception as e:
-            self.logger.warning(f"Winetricks installation failed with exception: {e}")
-            winetricks_success = False
-
-        # Fallback to protontricks if winetricks failed
-        if not winetricks_success:
-            self.logger.warning("Winetricks failed, falling back to protontricks for Wine component installation...")
-            try:
-                protontricks_success = self.protontricks_handler.install_wine_components(target_appid, self.game_var_full, specific_components=components)
-                if protontricks_success:
-                    self.logger.info("Protontricks fallback installation completed successfully")
-                else:
-                    self.logger.error("Both winetricks and protontricks failed to install Wine components.")
-                    print("Error: Failed to install necessary Wine components using both winetricks and protontricks.")
-                    return False
-            except Exception as e:
-                self.logger.error(f"Protontricks fallback also failed with exception: {e}")
-                print("Error: Failed to install necessary Wine components using both winetricks and protontricks.")
+            self.logger.info("Installing Wine components using user's preferred method...")
+            success = self.winetricks_handler.install_wine_components(wineprefix, self.game_var_full, specific_components=components)
+            if success:
+                self.logger.info("Wine component installation completed successfully")
+            else:
+                self.logger.error("Wine component installation failed")
+                print("Error: Failed to install necessary Wine components.")
                 return False
+        except Exception as e:
+            self.logger.error(f"Wine component installation failed with exception: {e}")
+            print("Error: Failed to install necessary Wine components.")
+            return False
         self.logger.info("Step 4: Installing Wine components... Done")
 
         # Step 5: Ensure permissions of Modlist directory
@@ -824,10 +814,10 @@ class ModlistHandler:
             vanilla_game_dir = None
             if self.steam_library and self.game_var_full:
                 vanilla_game_dir = str(Path(self.steam_library) / "steamapps" / "common" / self.game_var_full)
-                
-            if not self.resolution_handler.update_ini_resolution(
-                modlist_dir=self.modlist_dir, 
-                game_var=self.game_var_full, 
+
+            if not ResolutionHandler.update_ini_resolution(
+                modlist_dir=self.modlist_dir,
+                game_var=self.game_var_full,
                 set_res=self.selected_resolution,
                 vanilla_game_dir=vanilla_game_dir
             ):
@@ -930,6 +920,10 @@ class ModlistHandler:
         #     status_callback("Configuration completed successfully!")
             
         self.logger.info("Configuration steps completed successfully.")
+
+        # Step 14: Re-enforce Windows 10 mode after modlist-specific configurations (matches legacy script line 1333)
+        self._re_enforce_windows_10_mode()
+
         return True # Return True on success
 
     def _detect_steam_library_info(self) -> bool:
@@ -1331,5 +1325,40 @@ class ModlistHandler:
         # Not a special game type
         self.logger.debug("No special game type detected - standard workflow will be used")
         return None
+
+    def _re_enforce_windows_10_mode(self):
+        """
+        Re-enforce Windows 10 mode after modlist-specific configurations.
+        This matches the legacy script behavior (line 1333) where Windows 10 mode
+        is re-applied after modlist-specific steps to ensure consistency.
+        """
+        try:
+            if not hasattr(self, 'appid') or not self.appid:
+                self.logger.warning("Cannot re-enforce Windows 10 mode - no AppID available")
+                return
+
+            from ..handlers.winetricks_handler import WinetricksHandler
+            from ..handlers.path_handler import PathHandler
+
+            # Get prefix path for the AppID
+            prefix_path = PathHandler.find_compat_data(str(self.appid))
+            if not prefix_path:
+                self.logger.warning("Cannot re-enforce Windows 10 mode - prefix path not found")
+                return
+
+            # Get wine binary path
+            wine_binary = PathHandler.get_wine_binary_for_appid(str(self.appid))
+            if not wine_binary:
+                self.logger.warning("Cannot re-enforce Windows 10 mode - wine binary not found")
+                return
+
+            # Use winetricks handler to set Windows 10 mode
+            winetricks_handler = WinetricksHandler()
+            winetricks_handler._set_windows_10_mode(str(prefix_path), wine_binary)
+
+            self.logger.info("✓ Windows 10 mode re-enforced after modlist-specific configurations")
+
+        except Exception as e:
+            self.logger.warning(f"Error re-enforcing Windows 10 mode: {e}")
 
 # (Ensure EOF is clean and no extra incorrect methods exist below) 

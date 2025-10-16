@@ -303,29 +303,50 @@ class SettingsDialog(QDialog):
         general_layout.addWidget(api_group)
         general_layout.addSpacing(12)
 
-        # --- Default Proton Version Section ---
-        proton_group = QGroupBox("Default Proton Version")
+        # --- Proton Version Settings Section ---
+        proton_group = QGroupBox("Proton Version Settings")
         proton_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
-        proton_layout = QHBoxLayout()
+        proton_layout = QVBoxLayout()
         proton_group.setLayout(proton_layout)
 
-        self.proton_dropdown = QComboBox()
-        self.proton_dropdown.setToolTip("Select default Proton version for shortcut creation and texture processing")
-        self.proton_dropdown.setMinimumWidth(200)
+        # Install Proton Version (for jackify-engine texture processing)
+        install_proton_layout = QHBoxLayout()
+        self.install_proton_dropdown = QComboBox()
+        self.install_proton_dropdown.setToolTip("Proton version for modlist installation and texture processing (requires fast Proton)")
+        self.install_proton_dropdown.setMinimumWidth(200)
 
-        # Populate Proton dropdown
-        self._populate_proton_dropdown()
+        install_refresh_btn = QPushButton("↻")
+        install_refresh_btn.setFixedSize(30, 30)
+        install_refresh_btn.setToolTip("Refresh install Proton version list")
+        install_refresh_btn.clicked.connect(self._refresh_install_proton_dropdown)
 
-        # Refresh button for Proton detection
-        refresh_btn = QPushButton("↻")
-        refresh_btn.setFixedSize(30, 30)
-        refresh_btn.setToolTip("Refresh Proton version list")
-        refresh_btn.clicked.connect(self._refresh_proton_dropdown)
+        install_proton_layout.addWidget(QLabel("Install Proton:"))
+        install_proton_layout.addWidget(self.install_proton_dropdown)
+        install_proton_layout.addWidget(install_refresh_btn)
+        install_proton_layout.addStretch()
 
-        proton_layout.addWidget(QLabel("Proton Version:"))
-        proton_layout.addWidget(self.proton_dropdown)
-        proton_layout.addWidget(refresh_btn)
-        proton_layout.addStretch()
+        # Game Proton Version (for game shortcuts)
+        game_proton_layout = QHBoxLayout()
+        self.game_proton_dropdown = QComboBox()
+        self.game_proton_dropdown.setToolTip("Proton version for game shortcuts (can be any Proton 9+)")
+        self.game_proton_dropdown.setMinimumWidth(200)
+
+        game_refresh_btn = QPushButton("↻")
+        game_refresh_btn.setFixedSize(30, 30)
+        game_refresh_btn.setToolTip("Refresh game Proton version list")
+        game_refresh_btn.clicked.connect(self._refresh_game_proton_dropdown)
+
+        game_proton_layout.addWidget(QLabel("Game Proton:"))
+        game_proton_layout.addWidget(self.game_proton_dropdown)
+        game_proton_layout.addWidget(game_refresh_btn)
+        game_proton_layout.addStretch()
+
+        proton_layout.addLayout(install_proton_layout)
+        proton_layout.addLayout(game_proton_layout)
+
+        # Populate both Proton dropdowns
+        self._populate_install_proton_dropdown()
+        self._populate_game_proton_dropdown()
 
         general_layout.addWidget(proton_group)
         general_layout.addSpacing(12)
@@ -416,6 +437,22 @@ class SettingsDialog(QDialog):
             self.bandwidth_spin = None  # No bandwidth UI if Downloads resource doesn't exist
 
         advanced_layout.addWidget(resource_group)
+
+        # Component Installation Method Section
+        component_group = QGroupBox("Component Installation")
+        component_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
+        component_layout = QVBoxLayout()
+        component_group.setLayout(component_layout)
+
+        self.use_winetricks_checkbox = QCheckBox("Use winetricks for component installation (faster)")
+        self.use_winetricks_checkbox.setChecked(self.config_handler.get('use_winetricks_for_components', True))
+        self.use_winetricks_checkbox.setToolTip(
+            "When enabled: Uses winetricks for most components (faster) and protontricks only for dotnet40 (more reliable).\n"
+            "When disabled: Uses protontricks for all components (legacy behavior, slower but more compatible)."
+        )
+        component_layout.addWidget(self.use_winetricks_checkbox)
+
+        advanced_layout.addWidget(component_group)
         advanced_layout.addStretch()  # Add stretch to push content to top
 
         self.tab_widget.addTab(advanced_tab, "Advanced")
@@ -488,167 +525,250 @@ class SettingsDialog(QDialog):
         except:
             return 'auto'
 
-    def _populate_proton_dropdown(self):
-        """Populate Proton version dropdown with detected versions (includes GE-Proton and Valve Proton)"""
+    def _populate_install_proton_dropdown(self):
+        """Populate Install Proton dropdown (Experimental/GE-Proton 10+ only for fast texture processing)"""
         try:
             from jackify.backend.handlers.wine_utils import WineUtils
 
-            # Get all available Proton versions (GE-Proton + Valve Proton)
+            # Get all available Proton versions
             available_protons = WineUtils.scan_all_proton_versions()
 
             # Add "Auto" option first
-            self.proton_dropdown.addItem("Auto", "auto")
+            self.install_proton_dropdown.addItem("Auto (Recommended)", "auto")
 
-            # Add detected Proton versions with type indicators
+            # Filter for fast Proton versions only
+            fast_protons = []
+            slow_protons = []
+
             for proton in available_protons:
                 proton_name = proton.get('name', 'Unknown Proton')
                 proton_type = proton.get('type', 'Unknown')
 
-                # Format display name to show type for clarity
+                is_fast_proton = False
+
+                # Fast Protons: Experimental, GE-Proton 10+
+                if proton_name == "Proton - Experimental":
+                    is_fast_proton = True
+                elif proton_type == 'GE-Proton':
+                    # For GE-Proton, check major_version field
+                    major_version = proton.get('major_version', 0)
+                    if major_version >= 10:
+                        is_fast_proton = True
+
+                if is_fast_proton:
+                    if proton_type == 'GE-Proton':
+                        display_name = f"{proton_name} (GE)"
+                    else:
+                        display_name = proton_name
+                    fast_protons.append((display_name, str(proton['path'])))
+                else:
+                    # Slow Protons: Valve 9, 10 beta, older GE-Proton, etc.
+                    if proton_type == 'GE-Proton':
+                        display_name = f"{proton_name} (GE) (Slow texture processing)"
+                    else:
+                        display_name = f"{proton_name} (Slow texture processing)"
+                    slow_protons.append((display_name, str(proton['path'])))
+
+            # Add fast Protons first
+            for display_name, path in fast_protons:
+                self.install_proton_dropdown.addItem(display_name, path)
+
+            # Add separator and slow Protons with warnings
+            if slow_protons:
+                self.install_proton_dropdown.insertSeparator(self.install_proton_dropdown.count())
+                for display_name, path in slow_protons:
+                    self.install_proton_dropdown.addItem(display_name, path)
+
+            # Load saved preference
+            saved_proton = self.config_handler.get('proton_path', self._get_proton_10_path())
+            self._set_dropdown_selection(self.install_proton_dropdown, saved_proton)
+
+        except Exception as e:
+            logger.error(f"Failed to populate install Proton dropdown: {e}")
+            self.install_proton_dropdown.addItem("Auto (Recommended)", "auto")
+
+    def _populate_game_proton_dropdown(self):
+        """Populate Game Proton dropdown (any Proton 9+ for game compatibility)"""
+        try:
+            from jackify.backend.handlers.wine_utils import WineUtils
+
+            # Get all available Proton versions
+            available_protons = WineUtils.scan_all_proton_versions()
+
+            # Add "Same as Install" option first
+            self.game_proton_dropdown.addItem("Same as Install Proton", "same_as_install")
+
+            # Add all Proton 9+ versions
+            for proton in available_protons:
+                proton_name = proton.get('name', 'Unknown Proton')
+                proton_type = proton.get('type', 'Unknown')
+
+                # Add type indicator for clarity
                 if proton_type == 'GE-Proton':
                     display_name = f"{proton_name} (GE)"
-                elif proton_type == 'Valve-Proton':
-                    display_name = f"{proton_name}"
                 else:
                     display_name = proton_name
 
-                self.proton_dropdown.addItem(display_name, str(proton['path']))
+                self.game_proton_dropdown.addItem(display_name, str(proton['path']))
 
-            # Load saved preference and determine UI selection
-            saved_proton = self.config_handler.get('proton_path', self._get_proton_10_path())
-
-            # Check if saved path matches any specific Proton in dropdown
-            found_match = False
-            for i in range(self.proton_dropdown.count()):
-                if self.proton_dropdown.itemData(i) == saved_proton:
-                    self.proton_dropdown.setCurrentIndex(i)
-                    found_match = True
-                    break
-
-            # If no exact match found, check if it's a resolved auto-selection
-            if not found_match and saved_proton != "auto":
-                # This means config has a resolved path from previous "Auto" selection
-                # Show "Auto" in UI since user chose auto-detection
-                for i in range(self.proton_dropdown.count()):
-                    if self.proton_dropdown.itemData(i) == "auto":
-                        self.proton_dropdown.setCurrentIndex(i)
-                        break
+            # Load saved preference
+            saved_game_proton = self.config_handler.get('game_proton_path', 'same_as_install')
+            self._set_dropdown_selection(self.game_proton_dropdown, saved_game_proton)
 
         except Exception as e:
-            logger.error(f"Failed to populate Proton dropdown: {e}")
-            # Fallback: just show auto
-            self.proton_dropdown.addItem("Auto", "auto")
+            logger.error(f"Failed to populate game Proton dropdown: {e}")
+            self.game_proton_dropdown.addItem("Same as Install Proton", "same_as_install")
 
-    def _refresh_proton_dropdown(self):
-        """Refresh Proton dropdown with latest detected versions"""
-        current_selection = self.proton_dropdown.currentData()
-        self.proton_dropdown.clear()
-        self._populate_proton_dropdown()
-
-        # Restore selection if still available
-        for i in range(self.proton_dropdown.count()):
-            if self.proton_dropdown.itemData(i) == current_selection:
-                self.proton_dropdown.setCurrentIndex(i)
+    def _set_dropdown_selection(self, dropdown, saved_value):
+        """Helper to set dropdown selection based on saved value"""
+        found_match = False
+        for i in range(dropdown.count()):
+            if dropdown.itemData(i) == saved_value:
+                dropdown.setCurrentIndex(i)
+                found_match = True
                 break
 
+        # If no exact match and not auto/same_as_install, select first option
+        if not found_match and saved_value not in ["auto", "same_as_install"]:
+            dropdown.setCurrentIndex(0)
+
+    def _refresh_install_proton_dropdown(self):
+        """Refresh Install Proton dropdown"""
+        current_selection = self.install_proton_dropdown.currentData()
+        self.install_proton_dropdown.clear()
+        self._populate_install_proton_dropdown()
+        self._set_dropdown_selection(self.install_proton_dropdown, current_selection)
+
+    def _refresh_game_proton_dropdown(self):
+        """Refresh Game Proton dropdown"""
+        current_selection = self.game_proton_dropdown.currentData()
+        self.game_proton_dropdown.clear()
+        self._populate_game_proton_dropdown()
+        self._set_dropdown_selection(self.game_proton_dropdown, current_selection)
+
     def _save(self):
-        # Validate values
-        for k, (multithreading_checkbox, max_tasks_spin) in self.resource_edits.items():
-            if max_tasks_spin.value() > 128:
-                self.error_label.setText(f"Invalid value for {k}: Max Tasks must be <= 128.")
+        try:
+            # Validate values (only if resource_edits exist)
+            for k, (multithreading_checkbox, max_tasks_spin) in self.resource_edits.items():
+                if max_tasks_spin.value() > 128:
+                    self.error_label.setText(f"Invalid value for {k}: Max Tasks must be <= 128.")
+                    return
+            if self.bandwidth_spin and self.bandwidth_spin.value() > 1000000:
+                self.error_label.setText("Bandwidth limit must be <= 1,000,000 KB/s.")
                 return
-        if self.bandwidth_spin and self.bandwidth_spin.value() > 1000000:
-            self.error_label.setText("Bandwidth limit must be <= 1,000,000 KB/s.")
-            return
-        self.error_label.setText("")
-        # Save resource settings
-        for k, (multithreading_checkbox, max_tasks_spin) in self.resource_edits.items():
-            resource_data = self.resource_settings.get(k, {})
-            resource_data['MaxTasks'] = max_tasks_spin.value()
-            self.resource_settings[k] = resource_data
-        
-        # Save bandwidth limit to Downloads resource MaxThroughput (only if bandwidth UI exists)
-        if self.bandwidth_spin:
-            if "Downloads" not in self.resource_settings:
-                self.resource_settings["Downloads"] = {"MaxTasks": 16}  # Provide default MaxTasks
-            self.resource_settings["Downloads"]["MaxThroughput"] = self.bandwidth_spin.value()
-        
-        # Save all resource settings (including bandwidth) in one operation
-        self._save_json(self.resource_settings_path, self.resource_settings)
-        
-        # Save debug mode to config
-        self.config_handler.set('debug_mode', self.debug_checkbox.isChecked())
-        # Save API key
-        api_key = self.api_key_edit.text().strip()
-        self.config_handler.save_api_key(api_key)
-        # Save modlist base dirs
-        self.config_handler.set("modlist_install_base_dir", self.install_dir_edit.text().strip())
-        self.config_handler.set("modlist_downloads_base_dir", self.download_dir_edit.text().strip())
-        # Save jackify data directory (always store actual path, never None)
-        jackify_data_dir = self.jackify_data_dir_edit.text().strip()
-        self.config_handler.set("jackify_data_dir", jackify_data_dir)
+            self.error_label.setText("")
 
-        # Save Proton selection - resolve "auto" to actual path
-        selected_proton_path = self.proton_dropdown.currentData()
-        if selected_proton_path == "auto":
-            # Resolve "auto" to actual best Proton path using unified detection
-            try:
-                from jackify.backend.handlers.wine_utils import WineUtils
-                best_proton = WineUtils.select_best_proton()
+            # Save resource settings
+            for k, (multithreading_checkbox, max_tasks_spin) in self.resource_edits.items():
+                resource_data = self.resource_settings.get(k, {})
+                resource_data['MaxTasks'] = max_tasks_spin.value()
+                self.resource_settings[k] = resource_data
 
-                if best_proton:
-                    resolved_path = str(best_proton['path'])
-                    resolved_version = best_proton['name']
-                else:
-                    resolved_path = "auto"
-                    resolved_version = "auto"
-            except:
-                resolved_path = "auto"
-                resolved_version = "auto"
-        else:
-            # User selected specific Proton version
-            resolved_path = selected_proton_path
-            # Extract version from dropdown text
-            resolved_version = self.proton_dropdown.currentText()
+            # Save bandwidth limit to Downloads resource MaxThroughput (only if bandwidth UI exists)
+            if self.bandwidth_spin:
+                if "Downloads" not in self.resource_settings:
+                    self.resource_settings["Downloads"] = {"MaxTasks": 16}  # Provide default MaxTasks
+                self.resource_settings["Downloads"]["MaxThroughput"] = self.bandwidth_spin.value()
 
-        self.config_handler.set("proton_path", resolved_path)
-        self.config_handler.set("proton_version", resolved_version)
+            # Save all resource settings (including bandwidth) in one operation
+            self._save_json(self.resource_settings_path, self.resource_settings)
 
-        # Force immediate save and verify
-        save_result = self.config_handler.save_config()
-        if not save_result:
-            self.logger.error("Failed to save Proton configuration")
-        else:
-            self.logger.info(f"Saved Proton config: path={resolved_path}, version={resolved_version}")
-            # Verify the save worked by reading it back
-            saved_path = self.config_handler.get("proton_path")
-            if saved_path != resolved_path:
-                self.logger.error(f"Config save verification failed: expected {resolved_path}, got {saved_path}")
+            # Save debug mode to config
+            self.config_handler.set('debug_mode', self.debug_checkbox.isChecked())
+            # Save API key
+            api_key = self.api_key_edit.text().strip()
+            self.config_handler.save_api_key(api_key)
+            # Save modlist base dirs
+            self.config_handler.set("modlist_install_base_dir", self.install_dir_edit.text().strip())
+            self.config_handler.set("modlist_downloads_base_dir", self.download_dir_edit.text().strip())
+            # Save jackify data directory (always store actual path, never None)
+            jackify_data_dir = self.jackify_data_dir_edit.text().strip()
+            self.config_handler.set("jackify_data_dir", jackify_data_dir)
+
+            # Save Install Proton selection - resolve "auto" to actual path
+            selected_install_proton_path = self.install_proton_dropdown.currentData()
+            if selected_install_proton_path == "auto":
+                # Resolve "auto" to actual best Proton path using unified detection
+                try:
+                    from jackify.backend.handlers.wine_utils import WineUtils
+                    best_proton = WineUtils.select_best_proton()
+
+                    if best_proton:
+                        resolved_install_path = str(best_proton['path'])
+                        resolved_install_version = best_proton['name']
+                    else:
+                        resolved_install_path = "auto"
+                        resolved_install_version = "auto"
+                except:
+                    resolved_install_path = "auto"
+                    resolved_install_version = "auto"
             else:
-                self.logger.debug("Config save verified successfully")
-        
-        # Refresh cached paths in GUI screens if Jackify directory changed
-        self._refresh_gui_paths()
-        
-        # Check if debug mode changed and prompt for restart
-        new_debug_mode = self.debug_checkbox.isChecked()
-        if new_debug_mode != self._original_debug_mode:
-            reply = MessageService.question(self, "Restart Required", "Debug mode change requires a restart. Restart Jackify now?", safety_level="low")
-            if reply == QMessageBox.Yes:
-                import os, sys
-                # User requested restart - do it regardless of execution environment
-                self.accept()
+                # User selected specific Proton version
+                resolved_install_path = selected_install_proton_path
+                # Extract version from dropdown text
+                resolved_install_version = self.install_proton_dropdown.currentText()
 
-                # Check if running from AppImage
-                if os.environ.get('APPIMAGE'):
-                    # AppImage: restart the AppImage
-                    os.execv(os.environ['APPIMAGE'], [os.environ['APPIMAGE']] + sys.argv[1:])
+            self.config_handler.set("proton_path", resolved_install_path)
+            self.config_handler.set("proton_version", resolved_install_version)
+
+            # Save Game Proton selection
+            selected_game_proton_path = self.game_proton_dropdown.currentData()
+            if selected_game_proton_path == "same_as_install":
+                # Use same as install proton
+                resolved_game_path = resolved_install_path
+                resolved_game_version = resolved_install_version
+            else:
+                # User selected specific game Proton version
+                resolved_game_path = selected_game_proton_path
+                resolved_game_version = self.game_proton_dropdown.currentText()
+
+            self.config_handler.set("game_proton_path", resolved_game_path)
+            self.config_handler.set("game_proton_version", resolved_game_version)
+
+            # Save component installation method preference
+            self.config_handler.set("use_winetricks_for_components", self.use_winetricks_checkbox.isChecked())
+
+            # Force immediate save and verify
+            save_result = self.config_handler.save_config()
+            if not save_result:
+                self.logger.error("Failed to save Proton configuration")
+            else:
+                self.logger.info(f"Saved Proton config: install_path={resolved_install_path}, game_path={resolved_game_path}")
+                # Verify the save worked by reading it back
+                saved_path = self.config_handler.get("proton_path")
+                if saved_path != resolved_install_path:
+                    self.logger.error(f"Config save verification failed: expected {resolved_install_path}, got {saved_path}")
                 else:
-                    # Dev mode: restart the Python module
-                    os.execv(sys.executable, [sys.executable, '-m', 'jackify.frontends.gui'] + sys.argv[1:])
-                return
-        MessageService.information(self, "Settings Saved", "Settings have been saved successfully.", safety_level="low")
-        self.accept()
+                    self.logger.debug("Config save verified successfully")
+
+            # Refresh cached paths in GUI screens if Jackify directory changed
+            self._refresh_gui_paths()
+
+            # Check if debug mode changed and prompt for restart
+            new_debug_mode = self.debug_checkbox.isChecked()
+            if new_debug_mode != self._original_debug_mode:
+                reply = MessageService.question(self, "Restart Required", "Debug mode change requires a restart. Restart Jackify now?", safety_level="low")
+                if reply == QMessageBox.Yes:
+                    import os, sys
+                    # User requested restart - do it regardless of execution environment
+                    self.accept()
+
+                    # Check if running from AppImage
+                    if os.environ.get('APPIMAGE'):
+                        # AppImage: restart the AppImage
+                        os.execv(os.environ['APPIMAGE'], [os.environ['APPIMAGE']] + sys.argv[1:])
+                    else:
+                        # Dev mode: restart the Python module
+                        os.execv(sys.executable, [sys.executable, '-m', 'jackify.frontends.gui'] + sys.argv[1:])
+                    return
+
+            # If we get here, no restart was needed
+            MessageService.information(self, "Settings Saved", "Settings have been saved successfully.", safety_level="low")
+            self.accept()
+
+        except Exception as e:
+            self.logger.error(f"Error saving settings: {e}")
+            MessageService.warning(self, "Save Error", f"Failed to save settings: {e}", safety_level="medium")
 
     def _refresh_gui_paths(self):
         """Refresh cached paths in all GUI screens."""

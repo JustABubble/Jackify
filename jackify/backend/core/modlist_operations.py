@@ -156,7 +156,7 @@ class ModlistInstallCLI:
             from ..models.configuration import SystemInfo
             self.system_info = SystemInfo(is_steamdeck=steamdeck)
         
-        self.protontricks_handler = ProtontricksHandler(steamdeck=self.steamdeck)
+        self.protontricks_handler = ProtontricksHandler(self.steamdeck)
         self.shortcut_handler = ShortcutHandler(steamdeck=self.steamdeck)
         self.context = {}
         # Use standard logging (no file handler)

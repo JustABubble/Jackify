@@ -39,7 +39,7 @@ class ProtontricksDetectionService:
     def _get_protontricks_handler(self) -> ProtontricksHandler:
         """Get or create ProtontricksHandler instance"""
         if self._protontricks_handler is None:
-            self._protontricks_handler = ProtontricksHandler(steamdeck=self.steamdeck)
+            self._protontricks_handler = ProtontricksHandler(self.steamdeck)
         return self._protontricks_handler
     
     def detect_protontricks(self, use_cache: bool = True) -> Tuple[bool, str, str]:
